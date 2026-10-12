@@ -562,7 +562,7 @@ async def on_message(message):
             sent_message = message.content
 
             num_attachments = len(message.attachments)
-            s = (lambda x: "s" if x > 1 else "")(attachments) # returns "s" if there are multiple attachments
+            s = (lambda x: "s" if x > 1 else "")(num_attachments) # returns "s" if there are multiple attachments
 
             if attachments > 0:
                 sent_message += " [\U0001F4CE {num_attachments} attachment{s}]"
