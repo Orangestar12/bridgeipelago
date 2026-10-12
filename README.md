@@ -167,6 +167,7 @@ Hopefully that makes sense.
 |||
 |**Drawbridge Config**||
 |`DiscordBridgeEnabled`|Will toggle the ability to send messages to AP from Discord|
+|`ShowEmptyMessages`|Relays Discord messages with no content in them. This is mainly useful if your bot does not have privileged intents|
 |||
 |**Meta Config**||
 |`FlavorDeathLink`|Will change deathlink messages to have a little more personality [4]|
@@ -185,6 +186,7 @@ Hopefully that makes sense.
 |`SnoozeCompletedGames`|Enables skipping posting items to discord FOR completed games|
 |`JoinMessage`|A custom join message (console only) for the bot|
 |`DebugMode`|Enables extra debug chat/bot options [6]|
+|`DiscordForceNoPrivilegedIntents`|Runs the bot without support for privileged intents for debugging purposes|
 |`SelfHostNoWeb`|Disabled WebHost-specific functionality for self-hosted games with no WebHost module|
 |`CycleDiscord`|Setting to a value above 0 will restart the discord process every X seconds|
 

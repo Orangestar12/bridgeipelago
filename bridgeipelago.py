@@ -556,8 +556,29 @@ async def on_message(message):
     
     if message.channel.id != MainChannel.id:
         return
+
+    if not message.content.startswith('$'):
+        if CoreConfig["DrawbridgeConfig"]["DiscordBridgeEnabled"] == True:
+            sent_message = message.content
+
+            num_attachments = len(message.attachments)
+            s = (lambda x: "s" if x > 1 else "")(attachments) # returns "s" if there are multiple attachments
+
+            if attachments > 0:
+                sent_message += " [\U0001F4CE {num_attachments} attachment{s}]"
+            
+            if sent_message == None or sent_message == "":
+                if CoreConfig["DrawbridgeConfig"]["ShowEmptyMessages"]:
+                    sent_message = "[Message could not be relayed.]"
+                else:
+                    return
+            
+            relayed_message = f"(Discord) {message.author} - {sent_message}"
+            discordbridge_queue.put(relayed_message)
+
+        return
     
-    # Registers user for a alot in Archipelago
+    # Registers user for a slot in Archipelago
     if message.content.startswith('$register'):
         ArchSlot = message.content
         ArchSlot = ArchSlot.replace("$register ","")
@@ -625,10 +646,6 @@ async def on_message(message):
     if message.content.startswith('$reloaddiscord'):
         discordseppuku_queue.put("Reloading Discord bot...")
         await SendMainChannelMessage("Reloading Discord bot... Please wait.")
-
-    if not message.content.startswith('$') and CoreConfig["DrawbridgeConfig"]["DiscordBridgeEnabled"] == True:
-        relayed_message = "(Discord) " + str(message.author) + " - " + str(message.content)
-        discordbridge_queue.put(relayed_message)
 
 @tasks.loop(seconds=1)
 async def CheckCommandQueue():
@@ -1870,8 +1887,25 @@ def Discord(shared_config,toggle_config,shared_item_queue, shared_death_queue, s
     hintprocessing_queue = shared_hintprocessing_queue
 
     print("++ Starting Discord Client")
-    discord_client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
+    if CoreConfig["AdvancedConfig"]["DiscordForceNoPrivilegedIntents"]:
+        print("-- Forcing no support for privileged intents!")
+        print("-- Discord message reading functionality will be hampered!")
+        discord_client.intents.message_content = False
+        discord.client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
+    else:
+        try:
+            discord_client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
+        except discord.PrivilegedIntentsRequired:
+            print("!!! WARNING: Could not connect with privileged intents!")
+            print("!!!          Attempting to connect without explicit message content support.")
+            print("!!!          Commands will not work without replying to or mentioning the bot!")
 
+            if CoreConfig["DrawbridgeConfig"]["DiscordBridgeEnabled"]:
+                print("!!!          Drawbridge support will be limited!")
+            
+            # if we cannot connect we must retry without privileged intents
+            discord_client.intents.message_content = False
+            discord.client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
 
 # ====== MAIN SCRIPT START ====
 # The run method is blocking, so it will keep the program running

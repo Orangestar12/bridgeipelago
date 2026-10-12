@@ -46,7 +46,8 @@
         "APClientVideo": false
     },
     "DrawbridgeConfig": {
-        "DiscordBridgeEnabled": false
+        "DiscordBridgeEnabled": false,
+        "ShowEmptyMessages": true
     },
     "MetaConfig": {
         "FlavorDeathlink": false,
@@ -62,6 +63,7 @@
         "JoinMessage": "<custom join message here>",
         "DebugMode": false,
         "DiscordJoinOnly": false,
+        "DiscordForceNoPrivilegedIntents": false,
         "SelfHostNoWeb": false,
         "CycleDiscord": 0
     }
