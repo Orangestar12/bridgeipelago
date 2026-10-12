@@ -1891,7 +1891,7 @@ def Discord(shared_config,toggle_config,shared_item_queue, shared_death_queue, s
         print("-- Forcing no support for privileged intents!")
         print("-- Discord message reading functionality will be hampered!")
         discord_client.intents.message_content = False
-        discord.client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
+        discord_client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
     else:
         try:
             discord_client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
@@ -1905,7 +1905,7 @@ def Discord(shared_config,toggle_config,shared_item_queue, shared_death_queue, s
             
             # if we cannot connect we must retry without privileged intents
             discord_client.intents.message_content = False
-            discord.client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
+            discord_client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
 
 # ====== MAIN SCRIPT START ====
 # The run method is blocking, so it will keep the program running
