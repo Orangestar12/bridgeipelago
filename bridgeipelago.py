@@ -50,16 +50,23 @@ import discord
 from discord import app_commands
 import time
 
+# Bridgeipelago Optional Modules
+from modules.DeathlinkFlavor import GetFlavorText
+
+global ConfigManager
 global CoreConfig
 global ConfigLock
+global ToggleManager
 global ToggleConfig
 global ToggleLock
 
 # Global Configuration Loader
 ## This allows us to share the config across multiple processes/threads without issue
 def GenerateConfigManagers():
+    global ConfigManager
     global CoreConfig
     global ConfigLock
+    global ToggleManager
     global ToggleConfig
     global ToggleLock
     
@@ -110,6 +117,8 @@ def GetCoreDirectory(folder):
         return str(os.getcwd() + CoreConfig["AdvancedConfig"]["PlayerItemQueueDirectory"] + CoreConfig["ArchipelagoConfig"]['UniqueID'] + '/')
     elif folder == "arch":
         return str(os.getcwd() + CoreConfig["AdvancedConfig"]["ArchipelagoDataDirectory"] + CoreConfig["ArchipelagoConfig"]['UniqueID'] + '/')
+    elif folder == "core":
+        return str(os.getcwd())
     
 def GetCoreFiles(file):
     global CoreConfig
@@ -136,6 +145,8 @@ def GetCoreFiles(file):
         return GetCoreDirectory("arch") + 'ArchRoomData.json'
     elif file == "archstatus":
         return GetCoreDirectory("arch") + 'ArchStatus.json'
+    elif file == "lang":
+        return GetCoreDirectory("core") + CoreConfig["MetaConfig"]["LanguageFile"] + ".lang"
 
 def SetupLogger():
     global CoreConfig
@@ -189,12 +200,6 @@ except Exception as e:
     OverClockValue = 1
 #TO DO - Central Control for bot I'll just leave this in for now.
 DiscordGuildID = 1171964435741544498
-
-#Optionaly Load in Meta Modules
-def LoadMetaModules():
-    # Load Meta Modules if they are enabled in the config
-    if CoreConfig["MetaConfig"]["FlavorDeathlink"] == True:
-        from modules.DeathlinkFlavor import GetFlavorText
 
 ## ARCHIPELAGO TRACKER CLIENT + CORE FUNCTION
 class TrackerClient():
@@ -404,6 +409,7 @@ class HintClient:
         self.ap_connection: ClientConnection = None
         self.socket_thread: Thread = None
         self.is_closed = Event()
+        self.hintqueuepayload = hintprocessing_queue.get()
 
     def run(self):
         global CoreConfig
@@ -493,6 +499,7 @@ class HintClient:
         self.ap_connection.close()
 
     def start(self) -> None:
+        
         print("-- Attempting to open an HintClient connection in a new thread.")
         try:
             _ConnectionString = str(CoreConfig["ArchipelagoConfig"]['ArchipelagoServer']) + ":" + str(CoreConfig["ArchipelagoConfig"]['ArchipelagoPort'])
@@ -508,12 +515,11 @@ class HintClient:
         except Exception as e:
             print("Error while trying to connect HintClient to Archipelago:")
             print(e)
-            websocket_queue.put("!! HintClient start error...")
+            chat_queue.put("!! HintClient start error...")
 
-    def process_hint(self) -> None:
+    def process_hint(self, ) -> None:
         print("-- Requesting Hint from server.")
-        received_payload = hintprocessing_queue.get()
-        received_payload = "!hint " + str(received_payload)
+        received_payload = "!hint " + str(self.hintqueuepayload)
         payload = {
             'cmd': 'Say',
             'text': str(received_payload)}
@@ -672,6 +678,14 @@ async def CheckArchHost():
                 #await MainChannel.send(message)
                 await DebugChannel.send(message)
                 SetConfigVariable("ArchipelagoPort", int(RoomData["last_port"]))
+        
+        # We catch both TypeError and JSONDecodeError becuase they are what are thrown when the Arch server is unresponsive.
+        # We don't REALLY mind these, as it's a byproduct of the server being offline and we're unable to fetch it properly.
+        # The bot will only scream when there is an unhandled error that we have to look into, as is the case with the other processes.
+        except TypeError as e:
+            WriteToErrorLog("CheckArchHost", "Error occurred while checking ArchHost: [TypeError] " + str(e))
+        except json.JSONDecodeError as e:
+            WriteToErrorLog("CheckArchHost", "Error occurred while checking ArchHost: [JSONDecodingError] " + str(e))
         except Exception as e:
             WriteToErrorLog("CheckArchHost", "Error occurred while checking ArchHost: " + str(e))
             await DebugChannel.send("ERROR IN CHECKARCHHOST <@"+str(CoreConfig["DiscordConfig"]["DiscordAlertUserID"])+">")
@@ -725,12 +739,12 @@ async def ProcessItemQueue():
                 o.close()
 
                 if int(itemclass) == 4 and CoreConfig["ItemFilterConfig"]["BotItemSpoilTraps"] == True:
-                    ItemQueueFile = GetCoreDirectory("item") + recipient + ".csv"
+                    ItemQueueFile = GetCoreDirectory("item") + recipient.lower() + ".csv"
                     i = open(ItemQueueFile, "a")
                     i.write(ItemCheckLogMessage)
                     i.close()
                 elif int(itemclass) != 4:
-                    ItemQueueFile = GetCoreDirectory("item") + recipient + ".csv"
+                    ItemQueueFile = GetCoreDirectory("item") + recipient.lower() + ".csv"
                     i = open(ItemQueueFile, "a")
                     i.write(ItemCheckLogMessage)
                     i.close()
@@ -771,11 +785,15 @@ async def ProcessDeathQueue():
         o.close()
         
         if CoreConfig["RelayConfig"]["DeathlinkMessages"] == True:
-            DeathMessage = "**Deathlink received from: " + str(chatmessage['data']['source']) + "**"
+            DeathMessage = "**Deathlink!** "
+            # Flavour
+            if CoreConfig["MetaConfig"]["FlavorDeathlink"] == True:
+                DeathMessage += GetFlavorText(str(chatmessage['data']['source']))
+            else:
+                DeathMessage += "Received from **" + str(chatmessage['data']['source']) + "**"
+            # Cause
             if chatmessage['data'].get('cause') is not None and chatmessage['data'].get('cause') != "":
-                DeathMessage = DeathMessage + "\n" + "Cause: " + str(chatmessage['data']['cause'])
-            elif CoreConfig["MetaConfig"]["FlavorDeathlink"] == True:
-                DeathMessage = "Deathlink: " + GetFlavorText(str(chatmessage['data']['source']))
+                DeathMessage += "\n" + "*Cause:* " + str(chatmessage['data']['cause'])
             await SendMainChannelMessage(DeathMessage)
         else:
             return
@@ -1022,6 +1040,9 @@ async def Command_ListRegistrations(Sender):
             for slots in RegistrationContents:
                 Message = Message + slots + "\n"
             await Sender.send(Message)
+    except discord.Forbidden as e:
+        WriteToErrorLog("Command_ListRegistrations", "Can not send a DM to "+ str(Sender) + " - " + str(e))
+        await MainChannel.send("I can't send you a DM! Please check your privacy settings and try again.")
     except Exception as e:
         WriteToErrorLog("Command_ListRegistrations", "Error in list registrations command: " + str(e))
         print(e)
@@ -1058,7 +1079,7 @@ async def Command_KetchMeUp(User, message_filter):
         else:
             RegistrationContents = json.load(open(RegistrationFile, "r"))
             for reglines in RegistrationContents:
-                ItemQueueFile = GetCoreDirectory("item") + reglines.strip() + ".csv"
+                ItemQueueFile = GetCoreDirectory("item") + (reglines.lower()).strip() + ".csv"
                 if not os.path.isfile(ItemQueueFile):
                     await User.send("There are no items for " + reglines.strip() + " :/")
                     continue
@@ -1110,6 +1131,9 @@ async def Command_KetchMeUp(User, message_filter):
                 ketchupmessage = ketchupmessage + "```"
                 if not ketchupmessage == "``````":
                     await User.send(ketchupmessage)
+    except discord.Forbidden as e:
+        WriteToErrorLog("Command_KetchMeUp", "Can not send a DM to "+ str(User) + " - " + str(e))
+        await MainChannel.send("I can't send you a DM! Please check your privacy settings and try again.")
     except Exception as e:
         WriteToErrorLog("Command_KetchMeUp", "Error in ketch me up command: " + str(e))
         print(e)
@@ -1135,6 +1159,9 @@ async def Command_GroupCheck(DMauthor, game):
             ketchupmessage = ketchupmessage + "```"
             if not ketchupmessage == "``````":
                 await DMauthor.send(ketchupmessage)
+    except discord.Forbidden as e:
+        WriteToErrorLog("Command_GroupCheck", "Can not send a DM to "+ str(DMauthor) + " - " + str(e))
+        await MainChannel.send("I can't send you a DM! Please check your privacy settings and try again.")
     except Exception as e:
         WriteToErrorLog("Command_GroupCheck", "Error in group check command: " + str(e))
         print(e)
@@ -1248,6 +1275,9 @@ async def Command_Hints(player):
                 checkmessage = checkmessage + "```"
                 if not checkmessage == "``````":
                     await player.send(checkmessage)
+    except discord.Forbidden as e:
+        WriteToErrorLog("Command_Hints", "Can not send a DM to "+ str(player) + " - " + str(e))
+        await MainChannel.send("I can't send you a DM! Please check your privacy settings and try again.")
     except Exception as e:
         WriteToErrorLog("Command_Hints", "Error in hints command: " + str(e))
         print(e)
@@ -1423,6 +1453,7 @@ async def Command_CheckGraph():
         GameState = {}
         #Moves through rows for data
         for row in rows:
+            # print("counting row")
             slot = (row.find_all('td')[1].text).strip()
             game = (row.find_all('td')[2].text).strip()
             status = (row.find_all('td')[3].text).strip()
@@ -1440,6 +1471,7 @@ async def Command_CheckGraph():
 
         ### PLOTTING CODE ###
         with plt.xkcd():
+            # print("BUILDING PLOT")
             plt.logging.getLogger('matplotlib.font_manager').disabled = True
 
             # Change length of plot long axis based on player count
@@ -1798,15 +1830,45 @@ def WriteToErrorLog(module,message):
     with open(GetCoreFiles("errorlog"), 'a') as f:
         put = "["+str(time.strftime("%Y-%m-%d-%H-%M-%S"))+"],["+module+"]," + message
         f.write(put + "\n")
+        
+def GetLanguage(key):
+    try:
+        LanguagePack = json.loads(open(GetCoreFiles("lang")).read())
+        return LanguagePack[key]
+    except KeyError:
+        WriteToErrorLog("GetLanguage", "KeyError for language key: " + str(key))
+        return "LANG_KEY_ERROR"
 
 async def CancelProcess():
     return 69420
 
-def Discord(shared_config,toggle_config):
+def Discord(shared_config,toggle_config,shared_item_queue, shared_death_queue, shared_chat_queue, shared_seppuku_queue, shared_discordseppuku_queue, shared_websocket_queue, shared_lottery_queue, shared_discordbridge_queue, shared_hint_queue, shared_hintprocessing_queue):
     global CoreConfig
     global ToggleConfig
+    global item_queue
+    global death_queue
+    global chat_queue
+    global seppuku_queue
+    global discordseppuku_queue
+    global websocket_queue
+    global lottery_queue
+    global discordbridge_queue
+    global hint_queue
+    global hintprocessing_queue
+
     CoreConfig = shared_config
     ToggleConfig = toggle_config
+    item_queue = shared_item_queue
+    death_queue = shared_death_queue
+    chat_queue = shared_chat_queue
+    seppuku_queue = shared_seppuku_queue
+    discordseppuku_queue = shared_discordseppuku_queue
+    websocket_queue = shared_websocket_queue
+    lottery_queue = shared_lottery_queue
+    discordbridge_queue = shared_discordbridge_queue
+    hint_queue = shared_hint_queue
+    hintprocessing_queue = shared_hintprocessing_queue
+
     print("++ Starting Discord Client")
     discord_client.run(str(CoreConfig["DiscordConfig"]["DiscordToken"]))
 
@@ -1824,8 +1886,7 @@ def main():
 
     # Version Checking against GitHub
     try:
-        print(__name__)
-        BPversion = "pre-v3.0.0"
+        BPversion = "live-v3.0.0"
         GHAPIjson = json.loads(requests.get("https://api.github.com/repos/Quasky/bridgeipelago/releases/latest").content)
         if(GHAPIjson["tag_name"] != BPversion):
             print("You are not running the current release of Bridgeipelago.")
@@ -1837,8 +1898,6 @@ def main():
     GenerateConfigManagers()
     #Setup Logging for the bot
     SetupLogger()
-    # Load all of the meta modules (if any)
-    LoadMetaModules()
     # Confirm all of the core directories and files exist just to be safe
     ConfirmSpecialFiles()
 
@@ -1870,18 +1929,18 @@ def main():
 
         # Wait for game dump to be created by tracker client
         while not CheckGameDump():
-            print(f"== waiting for {GetCoreFiles("archgamedump")} to be created on when data package is received")
+            print("== waiting for " + GetCoreFiles("archgamedump") + " to be created on when data package is received")
             time.sleep(2)
 
         # Wait for connection dump to be created by tracker client
         while not CheckConnectionDump():
-            print(f"== waiting for {GetCoreFiles("archconnectiondump")} to be created on room connection")
+            print("== waiting for " + GetCoreFiles("archconnectiondump") + " to be created on room connection")
             time.sleep(2)
 
         print("== Arch Data Loaded!")
         time.sleep(3)
 
-    DiscordThread = Process(target=Discord, args=(CoreConfig,ToggleConfig))
+    DiscordThread = Process(target=Discord, args=(CoreConfig,ToggleConfig, item_queue, death_queue, chat_queue, seppuku_queue, discordseppuku_queue, websocket_queue, lottery_queue, discordbridge_queue, hint_queue, hintprocessing_queue))
     DiscordThread.start()
 
     DiscordCycleCount = 0
@@ -1939,7 +1998,7 @@ def main():
                 time.sleep(3)
 
                 print("++ Starting the discord thread again")
-                DiscordThread = Process(target=Discord, args=(CoreConfig,ToggleConfig))
+                DiscordThread = Process(target=Discord, args=(CoreConfig,ToggleConfig, item_queue, death_queue, chat_queue, seppuku_queue, discordseppuku_queue, websocket_queue, lottery_queue, discordbridge_queue, hint_queue, hintprocessing_queue))
                 DiscordThread.start()
                 DiscordCycleCount = 0
         
@@ -1950,16 +2009,13 @@ def main():
             print("++ Sleeping for 3 seconds to allow the discord thread to close")
             time.sleep(3)
             print("++ Starting the discord thread again")
-            DiscordThread = Process(target=Discord, args=(CoreConfig,ToggleConfig))
+            DiscordThread = Process(target=Discord, args=(CoreConfig,ToggleConfig, item_queue, death_queue, chat_queue, seppuku_queue, discordseppuku_queue, websocket_queue, lottery_queue, discordbridge_queue, hint_queue, hintprocessing_queue))
             DiscordThread.start()
             
         if not hint_queue.empty():
             hint_object = hint_queue.get()
             hintprocessing_queue.put(hint_object[1])
             hint_client = HintClient(
-                server_uri=CoreConfig["ArchipelagoConfig"]['ArchipelagoServer'],
-                port=CoreConfig["ArchipelagoConfig"]['ArchipelagoPort'],
-                password=GetArchPassword(),
                 slot_name=hint_object[0],
             )      
             hint_client.start()
