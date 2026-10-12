@@ -565,7 +565,7 @@ async def on_message(message):
             s = (lambda x: "s" if x > 1 else "")(num_attachments) # returns "s" if there are multiple attachments
 
             if num_attachments > 0:
-                sent_message += " [\U0001F4CE {num_attachments} attachment{s}]"
+                sent_message += f" [\U0001F4CE {num_attachments} attachment{s}]"
             
             if sent_message == None or sent_message == "":
                 if CoreConfig["DrawbridgeConfig"]["ShowEmptyMessages"]:
